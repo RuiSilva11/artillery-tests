@@ -1,0 +1,124 @@
+config:
+  #target: 'https://scc24-backend.azurewebsites.net/rest'
+  target: 'https://scc24appbrazilsouth1.azurewebsites.net/rest'
+  plugins:
+    metrics-by-endpoint:
+      useOnlyRequestNames: true
+  processor: "./test-utils-v2.js"
+  variables:
+     metricsProcessEndpoint : "myProcessEndpoint"  # function used to aggregate endpoints for statistics
+  phases:
+  - name: "Create users"    # Create users
+    duration: 1
+    arrivalCount: 1
+
+scenarios:
+  - name: 'Create users'
+    weight: 1
+    flow:
+      - loop:                            # let's create 950 users - loop ... count
+        - post:                          # First: post image for the user
+            url: "/media/image"
+            headers:
+              Content-Type: application/octet-stream
+              Accept: application/json
+            beforeRequest: "uploadImageBody"
+            capture: 
+              regexp: "(.+)"
+              as: "imageId"              # capture the reply as image id to be used in user creation
+        - function: "genNewUser"         # Generate the needed information for the user
+        - post:
+            url: "/user/create"
+            headers:
+              Content-Type: application/json
+              Accept: application/json
+            json:
+              nickName: "{{ nickname }}"
+              name: "{{ name }}"
+              email: "{{ email }}"
+              hashedPassword: "{{ pwd }}"
+              # photoId: "{{ imageId }}"
+              # houseIds: []
+            afterResponse: "genNewUserReply"    # capture result and store in file
+        count: 1
+      - loop:                            # let's create 50 users - loop ... count
+        - post:                          # First: post image for the user
+            url: "/media/image"
+            headers:
+              Content-Type: application/octet-stream
+              Accept: application/json
+            beforeRequest: "uploadImageBody"
+            capture: 
+              regexp: "(.+)"
+              as: "imageId"              # capture the reply as image id to be used in user creation
+        - function: "genNewUser"         # Generate the needed information for the user
+        - post:
+            url: "/user/create"
+            headers:
+              Content-Type: application/json
+              Accept: application/json
+            json:
+              nickName: "{{ nickname }}"
+              name: "{{ name }}"
+              email: "{{ email }}"
+              hashedPassword: "{{ pwd }}"
+              photoId: "{{ imageId }}"
+              # houseIds: []
+            afterResponse: "genNewUserReply"    # capture result and store in file
+        # linha adicionada por mim, a da funcao
+        - function: "selectUserSkewed"
+        - post:
+            url: "/user/auth"
+            headers:
+              Content-Type: application/json
+            json:
+              username: "{{ skewedLoggedName }}"
+              password: "{{ skewedLoggedPassword }}"
+            afterResponse: |
+              console.log("user authenticated")
+        - loop:                            # let's create 50 users - loop ... count
+          - post:                          # First: post image for the house
+              url: "/media/image"
+              headers:
+                Content-Type: application/octet-stream
+                Accept: application/json
+              beforeRequest: "uploadImageBody"
+              capture: 
+                regexp: "(.+)"
+                as: "imageId"              # capture the reply as image id to be used in house creation
+          - function: "genNewHouse"         # Generate the needed information for the house
+          - post:
+              url: "/house/create"
+              name: "house_create"
+              headers:
+                Content-Type: application/json
+                Accept: application/json
+              json:
+                name: "{{ houseName }}"
+                location: "{{ location }}"
+                description: "{{ description }}"
+                # from actualuserid to userid
+                ownerId: "{{ skewedUserid }}"
+                images: ["{{ imageId }}"]
+                videos: []
+              # capture:
+              #   regexp: "\b([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\b"
+              #   as: "houseIdExtract"  
+              # capture: 
+              #   json: "$.id"
+              #   as: "houseid"              # capture the house id to be used in house creation
+              afterResponse: "genNewHouseReply"
+          - post:                          # make this house available
+              url: "/house/{{ houseIdExtracted }}/rental/create"
+              name: "rental_create"
+              headers:
+                Content-Type: application/json
+                Accept: application/json
+              json:
+                startDate: "2024-10-05"
+                endDate: "2024-10-08"
+                price: "{{ cost }}"
+                discountPrice: "{{ discount }}"
+          whileTrue: "random90"
+        count: 250
+
